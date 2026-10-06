@@ -1,6 +1,4 @@
-argparse
 requests
-statistics
 urllib3
 pyyaml
 pytest
