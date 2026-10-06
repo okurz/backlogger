@@ -1,5 +1,6 @@
 import os
 import sys
+import tempfile
 import unittest
 from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
@@ -222,3 +223,62 @@ class TestOutput(unittest.TestCase):
         self.assertEqual(rows[0][3], "&#x1F534;")  # red/fail icon
         self.assertEqual(len(details_md_blocks), 1)
         self.assertIn("Show breakdown for: Stale PRs", details_md_blocks[0])
+
+    def test_get_state(self):
+        cases = [
+            {
+                "desc": "returns None when STATE_FOLDER is not set",
+                "folder": False,
+                "content": None,
+                "expected": None,
+                "expect_stderr": False,
+            },
+            {
+                "desc": "returns None when state file does not exist",
+                "folder": True,
+                "content": None,
+                "expected": None,
+                "expect_stderr": False,
+            },
+            {
+                "desc": "returns None when state file is empty",
+                "folder": True,
+                "content": "",
+                "expected": None,
+                "expect_stderr": False,
+            },
+            {
+                "desc": "returns decoded dict when state file contains valid JSON",
+                "folder": True,
+                "content": '{"bad_queries": {"q1": {}}}',
+                "expected": {"bad_queries": {"q1": {}}},
+                "expect_stderr": False,
+            },
+            {
+                "desc": "warns to stderr and returns None when state file contains malformed JSON",
+                "folder": True,
+                "content": "{invalid_json",
+                "expected": None,
+                "expect_stderr": True,
+            },
+        ]
+        for case in cases:
+            with (
+                self.subTest(case["desc"]),
+                tempfile.TemporaryDirectory() as tmpdir,
+                patch.dict(os.environ),
+                patch("sys.stderr") as mock_stderr,
+            ):
+                if case["folder"]:
+                    os.environ["STATE_FOLDER"] = tmpdir
+                    if case["content"] is not None:
+                        with open(os.path.join(tmpdir, "state.json"), "w") as f:
+                            f.write(case["content"])
+                else:
+                    os.environ.pop("STATE_FOLDER", None)
+                result = backlogger.get_state()
+                self.assertEqual(result, case["expected"])
+                if case["expect_stderr"]:
+                    mock_stderr.write.assert_called()
+                else:
+                    mock_stderr.write.assert_not_called()
